@@ -23,8 +23,5 @@ jobs:
       with:
         languages: typescript
 
-    # Checks against 10 software engineering guidelines
-    - name: Run Better Code Hub 
-      uses: bettercodehub/bettercodehub-action@v1
-      with:
-        token: ${{secrets.GITHUB_TOKEN}}
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
