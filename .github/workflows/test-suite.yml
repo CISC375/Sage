@@ -1,0 +1,30 @@
+name: test-suite
+
+on:
+  workflow_call:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '>=18'
+        cache: 'npm'
+    - run: npm cache clean --force
+    - run: npm ci
+
+    # Find security vulnerabilities
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: typescript
+
+    # Checks against 10 software engineering guidelines
+    - name: Run Better Code Hub 
+      uses: bettercodehub/bettercodehub-action@v1
+      with:
+        token: ${{secrets.GITHUB_TOKEN}}
