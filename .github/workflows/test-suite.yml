@@ -2,9 +2,6 @@ name: test-suite
 
 on:
   workflow_call:
-    permissions:
-      contents: read
-      security-events: write
 
 jobs:
   quality:
