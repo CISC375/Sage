@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "main", "Ava-test" ]
 
+permissions:
+  contents: read
+  security-events: write
+
 env:
   DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
   MAIN_BRANCH: 'main'
