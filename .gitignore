@@ -5,6 +5,7 @@ src/commands/admin/eval.ts
 
 config.ts
 token.json
+test.ts
 
 # macOS stuff
 .DS_Store

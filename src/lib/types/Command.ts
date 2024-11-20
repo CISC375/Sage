@@ -1,12 +1,13 @@
 import { ROLES } from '@root/config';
 import { ApplicationCommandOptionData, ApplicationCommandPermissions, ApplicationCommandPermissionType, ApplicationCommandType, CommandInteraction, InteractionResponse,
 	Message,
-	MessageContextMenuCommandInteraction } from 'discord.js';
+	MessageContextMenuCommandInteraction, Client } from 'discord.js';
 
 
 export abstract class Command {
 
 	// members
+	client: Client;
 	name: string;
 	category: string;
 	enabled: boolean;
