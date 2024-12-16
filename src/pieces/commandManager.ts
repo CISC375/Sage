@@ -1,4 +1,4 @@
-import { Collection, Client, CommandInteraction, ApplicationCommand,
+import { Collection, Client, ApplicationCommand,
 	GuildMember, SelectMenuInteraction,
 	ModalSubmitInteraction, TextChannel, GuildMemberRoleManager,
 	ButtonInteraction, ModalBuilder, TextInputBuilder, ActionRowBuilder,
@@ -12,6 +12,8 @@ import { Course } from '../lib/types/Course';
 import { SageUser } from '../lib/types/SageUser';
 import { CommandError } from '../lib/types/errors';
 import { verify } from '../pieces/verification';
+import { JobPreferenceAPI } from '../lib/utils/jobUtils/jobDatabase';
+import { validatePreferences } from '../lib/utils/jobUtils/validatePreferences';
 
 const DELETE_DELAY = 10000;
 
@@ -103,12 +105,13 @@ async function handleDropdown(interaction: SelectMenuInteraction) {
 	}
 }
 
+// used by jobform and update_preferences
 async function handleModalBuilder(interaction: ModalSubmitInteraction, bot: Client) {
 	const { customId, fields } = interaction;
 	const guild = await bot.guilds.fetch(GUILDS.MAIN);
 	guild.members.fetch();
 
-	switch (customId) {
+	switch (customId.replace(/[0-9]/g, '')) {
 		case 'announce': {
 			const channel = bot.channels.cache.get(fields.getTextInputValue('channel')) as TextChannel;
 			const content = fields.getTextInputValue('content');
@@ -129,6 +132,7 @@ async function handleModalBuilder(interaction: ModalSubmitInteraction, bot: Clie
 			interaction.reply({ content: `Your message was edited.` });
 			break;
 		}
+		// makes sure the user is verified in the mongo db user collections
 		case 'verify': {
 			const givenHash = fields.getTextInputValue('verifyPrompt');
 			const entry: SageUser = await interaction.client.mongo.collection(DB.USERS).findOne({ hash: givenHash });
@@ -144,6 +148,41 @@ async function handleModalBuilder(interaction: ModalSubmitInteraction, bot: Clie
 				: '';
 			interaction.reply({ content: `Thank you for verifying! You can now access the rest of the server. ${enrollStr}`, ephemeral: true });
 			break;
+		}
+		// jobform and update_preferences use the same logic to store responses.
+		case 'jobModal':
+		case 'updateModal': {
+			try {
+				// extracting the input from the modal.
+				const formNumber = parseInt(customId.slice(-1));
+				const answers = [1, 2, 3, 4, 5].slice(0, formNumber === 0 ? 4 : 5).map(num => fields.getTextInputValue(`question${num}`));
+				// Checks if the answer provided is accuate.
+				const { isValid, errors } = validatePreferences(answers, formNumber, true);
+				if (!isValid) {
+					await interaction.reply({
+						content: `Form validation failed:\n${errors.join('\n')}`,
+						ephemeral: true
+					});
+					return;
+				}
+
+				// Create API instance with the database instance directly.
+				const jobPreferenceAPI = new JobPreferenceAPI(interaction.client.mongo);
+				const success = await jobPreferenceAPI.storeFormResponses(interaction.user.id, answers, formNumber);
+				const isUpdate = customId.replace(/[0-9]/g, '') === 'updateModal';
+				const mess = isUpdate ? `Success: Your preferences have been updated! ${formNumber === 0
+					? 'Please use /update_preferences qset:2 to complete your interests.' : ''}`
+					: `Success: Form ${formNumber + 1} submitted! ${formNumber === 0 ? 'Please use /jobform qset:2 to complete your interests.' : ''}`;
+				// Takes user to questions, then interests. If submitted correctly, the answers will be stored.
+				await interaction.reply({
+					content: success ? mess : 'Error saving preferences. Please try again',
+					ephemeral: true
+				});
+			// Error for failed update.
+			} catch (error) {
+				console.error('update form error:', error);
+				await interaction.reply({ content: 'An error occurred. Please try again.', ephemeral: true });
+			}
 		}
 	}
 }
