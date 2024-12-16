@@ -1,4 +1,46 @@
 /* eslint-disable */
+/* 
+This is the /Calendar command. This command connects SAGE to Google Calendar to pull up the events listed in a master calendar so that one may review it
+without needing to open yet another web page. This command requires a few things to work:
+- Email authentication, which will rewrite data in the `credentials.json` file.
+- The calendar ID of the calendar you want to pull events from, which you can find in the settings menu for a calendar in Google Calendar (website).
+
+To authenticate your email:
+1. Delete the `token.json` file if it exists.
+2. Add the desired calendar ID in the intended location within the code, identified below.
+3. Run the command once you start SAGE.
+4. A new tab will open asking for your email, enter it and confirm.
+5. Once confirmed completely, close the window and return to discord.
+6. Call the command once to ensure you have properly authenticated your email.
+
+The command uses Google OAuth2 to fetch the events from the calendar, requiring permissions to read calendar data. 
+It supports displaying events in Discord with pagination for easier navigation.
+
+---
+
+Key Features:
+- **Fetch Events:** Retrieves events scheduled in the next 10 days from the specified Google Calendar.
+- **Pagination:** Displays events in pages with navigation buttons (`Previous`, `Next`, and `Done`).
+- **DM Display:** Sends the calendar events to the user's direct messages for private review.
+- **Error Handling:** Notifies the user in case of authentication or retrieval errors.
+
+Setup Instructions:
+1. Ensure you have all required files, especially config.ts.
+2. If you need to create a new bot to test things, using the Discord Developer Portal, add a bot as an application and follow the setup process 
+they describe.
+3. Navigate to config.ts and replace the bot token under const BOT.
+4. in config.ts, modify the GUILDS, ROLES, and CHANNELS constants as needed.
+5. Replace the calendar ID (if needed) with the ID of the calendar you want the bot to retrieve events from in this file.
+6. Authenticate your email using the process described above.
+7. Run some basic tests to ensure the bot has been setup properly, such as navigation and manual termination.
+
+Limitations:
+- The command fetches events only for the next 10 days.
+- Pagination is limited to three events per page.
+- The command will terminate after 5 minutes, which will prevent the buttons from working,
+but the current page will remain visible as long as you remain in the DM from the bot.
+-authorization only lasts for a few weeks until you need to authenticate again
+*/
 import {
 	ChatInputCommandInteraction,
 	ButtonBuilder,
@@ -20,6 +62,16 @@ const process = require('process');
 const { authenticate } = require('@google-cloud/local-auth');
 const { google } = require('googleapis');
 
+/*
+Below is the class definition for the /Calendar command. This class is structured as an extension of the Command class.
+It contains methods for:
+- Loading existing credentials.
+- Authenticating new credentials if needed.
+- Formatting event data for display.
+- Generating embeds and managing pagination.
+- Handling button interactions to navigate through event pages.
+*/ 
+
 interface Event{
 	eventId: string;
 	courseID: string;
@@ -31,8 +83,8 @@ interface Event{
 	locationType: string; 
 }
 export default class extends Command {
-	name = 'calendar';
-	description = 'Retrieve calendar events over the next 10 days with pagination, optionally filter';
+	name = 'calendar'; // Command name
+	description = 'Retrieve calendar events over the next 10 days with pagination, optionally filter'; // Command description
 
 	// All available filters that someone can add and they are not required
 	options: ApplicationCommandStringOptionData[] = [
@@ -69,53 +121,53 @@ export default class extends Command {
 	];
 
 	async run(interaction: ChatInputCommandInteraction): Promise<void> {
-		const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly'];
-		const TOKEN_PATH = path.join(process.cwd(), 'token.json');
-		const CREDENTIALS_PATH = path.join(process.cwd(), 'credentials.json');
+		const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']; // Required Google Calendar API scope
+		const TOKEN_PATH = path.join(process.cwd(), 'token.json'); // Path to store authentication tokens
+		const CREDENTIALS_PATH = path.join(process.cwd(), 'credentials.json'); // Path to credentials file
 
 		// Loads saved credentials if they exist
 		async function loadSavedCredentialsIfExist() {
 			try {
-				const content = await fs.readFile(TOKEN_PATH);
-				const credentials = JSON.parse(content);
-				return google.auth.fromJSON(credentials);
+				const content = await fs.readFile(TOKEN_PATH); // Read token 
+				const credentials = JSON.parse(content); //Parse credentials
+				return google.auth.fromJSON(credentials); //Return
 			} catch {
-				return null;
+				return null; //return null if no credentials exist
 			}
 		}
 
-		// Saves calendar access token.json into its own folder when authenticating
+		// Saves calendar access token.json into its own file when authenticating and credentials are saved to credentials.json for future use
 		async function saveCredentials(client) {
-			const content = await fs.readFile(CREDENTIALS_PATH);
-			const keys = JSON.parse(content);
-			const key = keys.installed || keys.web;
+			const content = await fs.readFile(CREDENTIALS_PATH);//read credentials.json
+			const keys = JSON.parse(content);//parse the JSON file
+			const key = keys.installed || keys.web;//extract the credentials data
 			const payload = JSON.stringify({
 				type: 'authorized_user',
 				client_id: key.client_id,
 				client_secret: key.client_secret,
 				refresh_token: client.credentials.refresh_token,
 			});
-			await fs.writeFile(TOKEN_PATH, payload);
+			await fs.writeFile(TOKEN_PATH, payload);//write token to credentials.json
 		}
 
 		// Loads the credentials that were authenticated by the user on their first use
 		async function authorize() {
-			let client = await loadSavedCredentialsIfExist();
+			let client = await loadSavedCredentialsIfExist();//attempt to load saved credentials
 			if (client) {
-				return client;
+				return client;//return if credentials exist
 			}
-			client = await authenticate({ scopes: SCOPES, keyfilePath: CREDENTIALS_PATH });
+			client = await authenticate({ scopes: SCOPES, keyfilePath: CREDENTIALS_PATH });//save credentials for reuse
 			if (client.credentials) {
-				await saveCredentials(client);
+				await saveCredentials(client);//return authenticated client
 			}
 			return client;
 		}
 
-		// Formats the date and time for events
+		// Formats the date and time for events into readable string
 		function formatDateTime(dateTime?: string): string {
-			if (!dateTime) return '`NONE`';
-			const date = new Date(dateTime);
-			return date.toLocaleString('en-US', {
+			if (!dateTime) return '`NONE`';//return "none" is dateTime is undefined
+			const date = new Date(dateTime);//parse date string
+			return date.toLocaleString('en-US', {//format date
 				month: 'long',
 				day: 'numeric',
 				hour: '2-digit',
@@ -184,15 +236,16 @@ export default class extends Command {
 			});
 			return;
 		}
-
+		// Fetch and list calendar events
 		async function listEvents(auth, interaction: ChatInputCommandInteraction, className: string, locationType: string) {
 			const calendar = google.calendar({ version: 'v3', auth });
 			const now = new Date();
 			const timeMin = now.toISOString();
 			const timeMax = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000).toISOString();
-
+			
 			try {
 				const res = await calendar.events.list({
+					//THE ISOLATED LINE IS WHERE YOU SHOULD PUT YOUR CALENDAR ID
 					calendarId: 'c_dd28a9977da52689612627d786654e9914d35324f7fcfc928a7aab294a4a7ce3@group.calendar.google.com',
 					timeMin,
 					timeMax,
@@ -202,7 +255,7 @@ export default class extends Command {
 
 				
 
-				const events = res.data.items || [];
+				const events = res.data.items || [];//retrieve event items
 				if (events.length === 0) {
 					await interaction.followUp('No events found over the next 10 days.');
 					return;
@@ -210,7 +263,7 @@ export default class extends Command {
 				/**
 				 * before filtering the events, we store every single one in MongoDB. 
 				 */
-
+				//parse events into readable format
 				for (const event of events) {
 					const eventParts = event.summary.split('-');
 					const eventData: Event = {
@@ -298,7 +351,7 @@ export default class extends Command {
 				// Display to the user with 3 events per page with a prev/next button to look through
 				let currentPage = 0;
 				const EVENTS_PER_PAGE = 3;
-
+				// Generate embed message for a specific page
 				function generateEmbed(page: number): EmbedBuilder {
 					const embed = new EmbedBuilder()
 						.setColor('Green')
@@ -309,13 +362,18 @@ export default class extends Command {
 						.forEach((event, index) => {
 							embed.addFields({
 								name: `Event ${page * EVENTS_PER_PAGE + index + 1}: ${event.name}`,
-								value: `**Event Holder:** ${event.eventHolder}\n**Start:** ${event.start}\n**End:** ${event.end}\n**Location:** ${event.location}\n**Event Type:** ${event.eventType}\n\n`,
+								value: `**Event Holder:** ${event.eventHolder}\n**Start:** ${event.start}\n**End:** ${event.end}\n**Location:** ${event.location}\n**Event Type:** ${event.eventType}\n\n`,//add event
 							});
 						});
 
 					return embed;
 				}
+				/* 
+				Below are functions to update the message with navigation and handle button interactions. 
+				These allow users to navigate pages or terminate the interaction.
+				*/
 
+				// Update the message with a new embed
 				async function updateMessage(page: number, message) {
 					const embed = generateEmbed(page);
 					const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -323,7 +381,7 @@ export default class extends Command {
 							.setCustomId('prev')
 							.setLabel('Previous')
 							.setStyle(ButtonStyle.Primary)
-							.setDisabled(page === 0),
+							.setDisabled(page === 0),//disable previous on first page
 						new ButtonBuilder()
 							.setCustomId('next')
 							.setLabel('Next')
@@ -332,16 +390,16 @@ export default class extends Command {
 						new ButtonBuilder()
 							.setCustomId('done')
 							.setLabel('Done')
-							.setStyle(ButtonStyle.Danger)
+							.setStyle(ButtonStyle.Danger)//add done button to interaction
 					);
 
-					await message.edit({ embeds: [embed], components: [buttons] });
+					await message.edit({ embeds: [embed], components: [buttons] });//update the message with new embed buttons
 				}
 
 				// Send initial message via DM
-				const dmChannel = await interaction.user.createDM();
+				const dmChannel = await interaction.user.createDM();//create DM channel
 				const initialEmbed = generateEmbed(currentPage);
-				const initialButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+				const initialButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(//generate first embed page
 					new ButtonBuilder()
 						.setCustomId('prev')
 						.setLabel('Previous')
@@ -360,40 +418,48 @@ export default class extends Command {
 
 				const message = await dmChannel.send({
 					embeds: [initialEmbed],
-					components: [initialButtons],
+					components: [initialButtons], // Send initial message with embed and buttons
 				});
-
-				const collector = message.createMessageComponentCollector({ time: 300000 });
-
+				//collector to handle button interactions
+				const collector = message.createMessageComponentCollector({ time: 300000 });//5 minute collector timer
+				//handle button interactions
 				collector.on('collect', async (btnInteraction) => {
 					if (btnInteraction.customId === 'done') {
-						collector.stop();
+						collector.stop();//stop collector
 						await message.edit({ components: [] });
-						await btnInteraction.reply('Collector manually terminated.');
+						await btnInteraction.reply('Collector manually terminated.');//notify user
 					} else {
-						if (btnInteraction.customId === 'prev') currentPage--;
-						if (btnInteraction.customId === 'next') currentPage++;
+						if (btnInteraction.customId === 'prev') currentPage--;//go to previous page
+						if (btnInteraction.customId === 'next') currentPage++;//go to next page
 						await updateMessage(currentPage, message);
 						await btnInteraction.deferUpdate();
 					}
 				});
-
+				//remove buttons once the collector ends and when interaction ends
 				collector.on('end', async () => {
 					await message.edit({ components: [] });
 				});
 			} catch (err) {
+				/* 
+				If an error occurs during the interaction or event retrieval,
+				log the error and notify the user with a follow-up message.
+				*/
 				console.error(err);
 				await interaction.followUp('Failed to retrieve calendar events.');
-			}
+			}// Notify the user of failure
 		}
-
+		// Authenticate the user and fetch events
 		try {
 			await interaction.reply('Authenticating and fetching events...');
 			const auth = await authorize();
 			await listEvents(auth, interaction, className, locationType);
 		} catch (err) {
-			console.error(err);
-			await interaction.followUp('An error occurred.');
-		}
+			/* 
+			If an error occurs during authentication or initialization, 
+			log the error and notify the user with a follow-up message.
+			*/
+			console.error(err); // Log the error to the console
+			await interaction.followUp('An error occurred during authentication or event retrieval.'); // Notify the user		
+			}
 	}
 }
