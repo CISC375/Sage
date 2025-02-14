@@ -43,7 +43,7 @@
 		"@discordjs/node-pre-gyp": "0.4.5",
 		"module-alias": "^2.2.2",
 		"moment": "^2.29.1",
-		"mongodb": "^3.6.3",
+		"mongodb": "^3.7.4",
 		"node-cron": "^2.0.3",
 		"node-fetch": "^2.6.1",
 		"nodemailer": "^6.4.17",
